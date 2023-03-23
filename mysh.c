@@ -8,15 +8,17 @@
 #include <sys/stat.h>
 
 #define PROMPT "mysh> "
+#define FAIL_PROMPT "!mysh> "
 #define IS_EXCEPTIONS(x) (x == '|' | x == '<' | x == '>')
-
-static char* built_in_commands[] = {"cd", "pwd"};
-
+#define is_builtin_cmds(x) (x == "cd" | x == "pwd")
+// static char* built_in_commands[] = {"cd", "pwd"};
+static int is_cmd_success = 1;
 static char* search_paths[] = {"/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin", NULL};
-
+static int status;
 struct exec_info {
     char **arguments;
     char *executable_path;
+    char *cmd;
     char *input_file;
     char *output_file;
 };
@@ -45,10 +47,6 @@ char *readCommand() {
 }
 
 char *get_executable_path(char *word) {
-    // printf("%ld", word);s
-    // if (word == '\n') {
-    //     return EXIT_SUCCESS;
-    // }
     if (word[0] == '/') {
         return word;
     }
@@ -100,27 +98,65 @@ void print_string_list(char **list, int num_strings) {
     
 }
 
+int mysh_cd(char *path) {
+    if (chdir(path) == -1) {
+        perror("cd");
+        is_cmd_success = 0;
+        return EXIT_FAILURE;
+    } 
+
+    is_cmd_success = 1;
+    return EXIT_SUCCESS;
+}
+
+int mysh_pwd() {
+    char *cwd;
+    int size = pathconf(".", _PC_PATH_MAX); // get maximum path length
+
+    if ((cwd = (char *)malloc(size)) != NULL) { // allocate memory for cwd
+        if (getcwd(cwd, size) != NULL) { // get the current working directory
+            printf("%s\n", cwd);
+        } else {
+            perror("pwd");
+            is_cmd_success = 0;
+            return EXIT_FAILURE;
+        }
+        free(cwd); // free memory allocated for cwd
+    } else {
+        perror("malloc");
+        is_cmd_success = 0;
+        return EXIT_FAILURE;
+    }
+
+    is_cmd_success = 1;
+    return EXIT_SUCCESS;
+}
+
 struct exec_info* parseCommand() {
     words_init(STDIN_FILENO);
     char *word;
     char **arguments;
     char *executable_path;
+    char *cmd;
     char *input_file = NULL;
     char *output_file = NULL;
 
+    struct exec_info* info = malloc(sizeof(struct exec_info));
+
     // executable
     word = words_next();
+    info->cmd = word;
 
     // EOF in batch mode
     if (word == NULL) {
-        return EXIT_SUCCESS;
+        return EOF;
     }
 
     executable_path = get_executable_path(word);
 
     if (strcmp(word, "exit") == 0) {
-            printf("mysh: exiting\n");
-            return EXIT_SUCCESS;
+            printf("mysh: exiting...\n");
+            exit(1);
     }
 
     // command as first arg.
@@ -162,7 +198,7 @@ struct exec_info* parseCommand() {
 
     arguments[args_pos] = NULL;
 
-    struct exec_info* info = malloc(sizeof(struct exec_info));
+    
 
     info->arguments = arguments;
     info->executable_path = executable_path;
@@ -172,26 +208,21 @@ struct exec_info* parseCommand() {
     return info;
 }
 
-void mysh_cd(char **args) {
-    if (chdir(args[1]) != 0) {
-        perror("!mysh> ");
-    }
-}
-
-// void mysh_pwd(char **args) {
-
-//     if (sizeof(args) > 1) {
-//         perror("!mysh> ");
-//     }
-
-//     getcwd(stdout, 1024);
-// }
-
 int execute_command(struct exec_info **pointer) {
     int child_id, wstatus;
     struct exec_info* info = *pointer;
     int fd_input;
     int fd_output;
+
+    if (strcmp(info->cmd, "cd") == 0) {
+        mysh_cd(info->arguments[1]);
+        return EXIT_SUCCESS;
+    }
+
+    if (strcmp(info->cmd, "pwd") == 0) {
+        mysh_pwd();
+        return EXIT_SUCCESS;
+    }
     
     int pid = fork();
 	if (pid == 0) {
@@ -219,7 +250,6 @@ int execute_command(struct exec_info **pointer) {
         if (fd_output) close(fd_output);
 
         execvp(info->executable_path, info->arguments);
-
         
         // must use execv, because the number of arguments is dynamic
         // if (fd_output) close(fd_output);
@@ -232,25 +262,35 @@ int execute_command(struct exec_info **pointer) {
     // if (fd_input) close(fd_input);
     // if (fd_output) close(fd_output);
 
-    // child_id = wait(&wstatus);
+    child_id = wait(&wstatus);
     
-    // if (WIFEXITED(wstatus)) {
-    //     printf("%s exited with status %d\n", info->executable_path, WEXITSTATUS(wstatus));
-    // } else {
-    //     printf("%s exited abnormally\n", info->executable_path);
-    // }
+    if (WIFEXITED(wstatus)) {
+        is_cmd_success = 1;
+        // printf("%s exited with status %d\n", info->executable_path, WEXITSTATUS(wstatus));
+    } else {
+        is_cmd_success = 0;
+        // printf("%s exited abnormally\n", info->executable_path);
+    }
 
-    return 1;
+    return EXIT_SUCCESS;
 }
 
 void interactiveMode() {
     printf("%s", "Welcome to my shell!\n");
     while (1) {
-        fflush(stdout);
-        printf("%s", PROMPT);
-        fflush(stdout);
+        if (is_cmd_success == 1) {
+            fflush(stdout);
+            printf("%s", PROMPT);
+            fflush(stdout);
+        } else {
+            fflush(stdout);
+            printf("%s", FAIL_PROMPT);
+            fflush(stdout);
+        }
+
+        
         struct exec_info* info = parseCommand();
-        if (info == EXIT_SUCCESS) {
+        if (info == EOF) {
             break;
         }
         execute_command(&info);
