@@ -267,7 +267,6 @@ struct exec_info* parseCommand() {
             word = words_next();
             input_file = malloc(sizeof(char) * strlen(word) + 1);
             strcpy(input_file, word);
-<<<<<<< HEAD
 
         } else if (strchr(word, '*') != NULL) { // check if the token contains "*"
             char delim[] = "*"; // The character on the basis of which the split will be done
@@ -368,7 +367,7 @@ struct exec_info* parseCommand() {
             
 
         } else {
-=======
+
         } else if (strncmp(word, "~/", 2) == 0) {
             // home dir
             char *home_env = getenv("HOME");
@@ -384,7 +383,7 @@ struct exec_info* parseCommand() {
 
         } 
         else {
->>>>>>> 9b1b3ff2f038d0ed4dd336b073b11ad817ded0e2
+
             // arguments
             arguments = realloc(arguments, args_pos + 1 * sizeof(char*));
             arguments[args_pos] = (char *) malloc(sizeof(char) * strlen(word) + 1);
