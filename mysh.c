@@ -11,8 +11,10 @@
 #define FAIL_PROMPT "!mysh> "
 #define IS_EXCEPTIONS(x) (x == '|' | x == '<' | x == '>')
 #define is_builtin_cmds(x) (x == "cd" | x == "pwd")
-// static char* built_in_commands[] = {"cd", "pwd"};
+
 static int is_cmd_success = 1;
+static int not_stopped_at_newline = 1;
+static int reached_EOF = 0;
 static char* search_paths[] = {"/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin", NULL};
 static int status;
 struct exec_info {
@@ -21,30 +23,11 @@ struct exec_info {
     char *cmd;
     char *input_file;
     char *output_file;
+    int args_len;
 };
 
 #define is_builtin_commands(x) (strcmp(x, "cd") == 0 | strcmp(x, "pwd") == 0)
 
-char *readCommand() {
-        char c;
-        int pos = 0;
-        char* command = malloc(sizeof(char) * 1024);
-
-        // readCommand
-        while (1) {
-            c = getchar();    
-            if (c == '\n' | c == EOF) {
-                command[pos] = c;
-                break;
-            }
-            else {
-                command[pos] = c;
-            }
-            pos++;
-        }
-
-        return command;
-}
 
 char *get_executable_path(char *word) {
     if (word[0] == '/') {
@@ -99,11 +82,19 @@ void print_string_list(char **list, int num_strings) {
 }
 
 int mysh_cd(char *path) {
-    if (chdir(path) == -1) {
-        perror("cd");
-        is_cmd_success = 0;
-        return EXIT_FAILURE;
-    } 
+    if (path == NULL) {
+        if (chdir(getenv("HOME")) == -1) {
+            perror("cd");
+            is_cmd_success = 0;
+            return EXIT_FAILURE;
+        } 
+    } else {
+        if (chdir(path) == -1) {
+                perror("cd");
+                is_cmd_success = 0;
+                return EXIT_FAILURE;
+            } 
+    }
 
     is_cmd_success = 1;
     return EXIT_SUCCESS;
@@ -133,7 +124,6 @@ int mysh_pwd() {
 }
 
 struct exec_info* parseCommand() {
-    words_init(STDIN_FILENO);
     char *word;
     char **arguments;
     char *executable_path;
@@ -146,18 +136,26 @@ struct exec_info* parseCommand() {
     // executable
     word = words_next();
     info->cmd = word;
+    // printf("word: %s\n", word);
 
-    // EOF in batch mode
     if (word == NULL) {
-        return EOF;
+        return NULL;
     }
 
-    executable_path = get_executable_path(word);
+    if (strcmp(word, "\n") == 0) {
+        fflush(stdout);
+        printf("%s", PROMPT);
+        fflush(stdout);
+        // return NULL;
+        return NULL;
+    }
 
     if (strcmp(word, "exit") == 0) {
             printf("mysh: exiting...\n");
             exit(1);
     }
+
+    executable_path = get_executable_path(word);
 
     // command as first arg.
     arguments = malloc(sizeof(char*));
@@ -165,11 +163,33 @@ struct exec_info* parseCommand() {
 
     int args_pos = 1;
 
-	while ((word = words_next())) {
-        if (strcmp(word, "\n") == 0) {
-            break;
+	while (1) {
+        word = words_next();
+        // fflush(stdout);
+        // printf("token: %s\n", word);
+        // fflush(stdout);
+        // EOF in a batch mode
+        if (word == NULL) {
+            // EOF
+            reached_EOF = 1;
+            arguments[args_pos] = NULL;
+
+            info->arguments = arguments;
+            info->executable_path = executable_path;
+
+            return info;
+        }
+
+        if (strcmp(word,"|") == 0) {
+            break; 
         }
         
+        if (strcmp(word, "\n") == 0) {
+            not_stopped_at_newline = 0;
+            break;
+        }
+
+
         if (strcmp(word, ">") == 0) {
             // next token set to STDOUT 
             word = words_next();
@@ -181,9 +201,22 @@ struct exec_info* parseCommand() {
             word = words_next();
             input_file = malloc(sizeof(char) * strlen(word) + 1);
             strcpy(input_file, word);
-        } else {
+        } else if (strncmp(word, "~/", 2) == 0) {
+            // home dir
+            char *home_env = getenv("HOME");
+            char* home_word = strcat(home_env, &word[1]);
+            // printf("home_word: %s", home_word);
             // arguments
-            // printf("args\n");
+            arguments = realloc(arguments, args_pos + 1 * sizeof(char*));
+            arguments[args_pos] = (char *) malloc(sizeof(char) * strlen(home_word) + 1);
+        
+            strcpy(arguments[args_pos], home_word);
+            
+            ++args_pos;
+
+        } 
+        else {
+            // arguments
             arguments = realloc(arguments, args_pos + 1 * sizeof(char*));
             arguments[args_pos] = (char *) malloc(sizeof(char) * strlen(word) + 1);
         
@@ -193,19 +226,44 @@ struct exec_info* parseCommand() {
         }
 
         free(word);
-        // word = NULL;
 	}
 
-    arguments[args_pos] = NULL;
-
     
+    arguments[args_pos] = NULL;
 
     info->arguments = arguments;
     info->executable_path = executable_path;
     info->input_file = input_file;
     info->output_file = output_file;
+    info->args_len = args_pos - 1;
 
     return info;
+}
+
+struct exec_info** pareseLine() {
+    struct exec_info** exec_infos;
+    struct exec_info* info;
+    
+    int pos = 0;
+
+    exec_infos = (struct exec_info**) malloc(sizeof(struct exec_info *));
+
+    while (not_stopped_at_newline) {
+        info = parseCommand();
+        if (info != NULL) {
+            exec_infos = realloc(exec_infos, pos + 1 * sizeof(struct exec_info *));
+            exec_infos[pos] = info;
+            ++pos;
+        } else {
+            break;
+        }
+    }
+
+    not_stopped_at_newline = 1;
+    exec_infos[pos] = NULL;
+
+    return exec_infos;
+    
 }
 
 int execute_command(struct exec_info **pointer) {
@@ -215,13 +273,16 @@ int execute_command(struct exec_info **pointer) {
     int fd_output;
 
     if (strcmp(info->cmd, "cd") == 0) {
-        mysh_cd(info->arguments[1]);
-        return EXIT_SUCCESS;
+        printf("%d\n", info->args_len);
+        if (info->args_len == 0) {
+            return mysh_cd(NULL);
+        } else {
+            return mysh_cd(info->arguments[1]);
+        }
     }
 
     if (strcmp(info->cmd, "pwd") == 0) {
-        mysh_pwd();
-        return EXIT_SUCCESS;
+        return mysh_pwd();
     }
     
     int pid = fork();
@@ -275,8 +336,82 @@ int execute_command(struct exec_info **pointer) {
     return EXIT_SUCCESS;
 }
 
+int execute_pipe(struct exec_info ***pointer) {
+    int child_id;
+    struct exec_info** infos = *pointer;
+    int fd_input;
+    int fd_output;
+	int i, pid1, pid2, clid, wstatus, p[2];
+	char *clname;
+    
+    int pos = 0;
+    while (infos[pos+1] != NULL) {
+        if (pipe(p) == -1) {
+            perror("pipe");
+            return EXIT_FAILURE;
+        }
+        
+        pid1 = fork();
+        if (pid1 == 0) {
+            
+            dup2(p[1], STDOUT_FILENO);
+        
+            // close excess file descriptors
+            close(p[0]);
+            close(p[1]);
+            
+            execvp(infos[pos]->executable_path, infos[pos]->arguments);
+                // must use execv, because the number of arguments is dynamic
+            
+            perror(infos[pos]->cmd);
+            return EXIT_FAILURE;
+        }
+        
+        pid2 = fork();
+        if (pid2 == 0) {
+        
+            //child process reads from pipe
+            dup2(p[0], STDIN_FILENO);
+
+            // dup2(p[1], STDOUT_FILENO);
+            
+            // close excess file descriptors
+            close(p[0]);
+            close(p[1]);
+            
+            execvp(infos[pos+1]->executable_path, infos[pos+1]->arguments);
+        
+            perror(infos[pos+1]->cmd);
+            return EXIT_FAILURE;
+        }
+        
+        // close excess file descriptors
+        close(p[0]);
+        close(p[1]);  // what happens if we move this after the wait loop?
+        
+        // wait for child processes to end
+        // (is the order always deterministic? why or why not?)
+        for (i = 0; i < 2; i++) {
+            clid = wait(&wstatus);
+            clname = clid == pid1 ? infos[pos]->cmd : infos[pos+1]->cmd;
+            if (WIFEXITED(wstatus)) {
+                printf("%s exited with status %d\n", clname, WEXITSTATUS(wstatus));
+            } else {
+                printf("%s exited abnormally\n", clname);
+            }
+        }
+
+        ++pos;
+    }
+	
+
+	return EXIT_SUCCESS;
+
+}
+
 void interactiveMode() {
     printf("%s", "Welcome to my shell!\n");
+    words_init(STDIN_FILENO);
     while (1) {
         if (is_cmd_success == 1) {
             fflush(stdout);
@@ -288,26 +423,44 @@ void interactiveMode() {
             fflush(stdout);
         }
 
-        
-        struct exec_info* info = parseCommand();
-        if (info == EOF) {
-            break;
+        struct exec_info** infos = pareseLine();
+
+        // getting command count
+        int count = 0;
+        while (infos[count] != NULL) {
+            count++;
         }
-        execute_command(&info);
-        // printf("%s", PROMPT);
+
+        if (count == 1) {
+            execute_command(&infos[0]);
+        } else {
+            execute_pipe(&infos);
+        }
     }
 }
 
 void batchMode(char *fname) {
     int fd = open(fname, O_RDONLY);
     dup2(fd, STDIN_FILENO);
+    words_init(STDIN_FILENO);
     
     while (1) {
-        struct exec_info* info = parseCommand();
-        if (info == EXIT_SUCCESS) {
-            break;
+        if (reached_EOF) {
+            exit(1);
         }
-        execute_command(&info);
+        struct exec_info** infos = pareseLine();
+
+        // getting command count
+        int count = 0;
+        while (infos[count] != NULL) {
+            count++;
+        }
+
+        if (count == 1) {
+            execute_command(&infos[0]);
+        } else {
+            execute_pipe(&infos);
+        }
     }
     close(fd);
 }
