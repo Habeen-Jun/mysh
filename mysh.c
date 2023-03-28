@@ -131,6 +131,33 @@ char** traverse(char *dname, char** sub_files, size_t* size) {
     return sub_files;
 }
 
+int check_matched(char *pattern, char *fname) {
+    int start_pos = 0;
+    int end_pos = strlen(pattern) - 1;
+    
+    int f_end_pos = strlen(fname) - 1;
+    while (pattern[start_pos] != '*') {
+        // printf("%c\n", pattern[start_pos]);
+        if (pattern[start_pos] == fname[start_pos]) {
+            start_pos++;
+        } else {
+            return 0;
+        }
+    }
+
+    while (pattern[end_pos] != '*') {
+        // printf("%c\n", pattern[end_pos]);
+        if (pattern[end_pos] == fname[f_end_pos]) {
+            end_pos--;
+            f_end_pos--;
+        } else {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
 
 void print_string_list(char **list, int num_strings) {
     int i;
@@ -232,7 +259,7 @@ struct exec_info* parseCommand() {
 	while (1) {
         word = words_next();
         // fflush(stdout);
-        // printf("token: %s\n", word);
+        printf("token: %s\n", word);
         // fflush(stdout);
         // EOF in a batch mode
         if (word == NULL) {
@@ -311,7 +338,9 @@ struct exec_info* parseCommand() {
             char *first_pattern;
             char *second_pattern;
 
-            char **replace_files = malloc(sizeof(char *));
+            char **matched_files = malloc(sizeof(char *));
+            size_t num_matched = 0;
+            size_t *size_matched = &num_matched;
             
 
             // checks the first pattern is in the file name (when it only has front)
@@ -319,13 +348,22 @@ struct exec_info* parseCommand() {
                 for(int i = 0; i < *size; i++) {
                     first_pattern = strstr(files[i], pattern[0]);
                     if(first_pattern != NULL) {
-                        printf("%s \n", files[i]);
+                        // printf("%s \n", files[i]);
                         second_pattern = strstr(first_pattern, pattern[1]);
                         // checking the pattern when it has string both front and back
                         if(second_pattern != NULL) {
-                            printf("%s \n", files[i]);
+                            // printf("%s \n", files[i]);
+                        
+                            matched_files = realloc(matched_files, sizeof(char *) * (num_matched + 1));
+                            matched_files[num_matched] = files[i];
                             // replace_files = realloc(replace_files, (i+1));
                             // return replace_files;
+                            // matched_files = realloc(matched_files, sizeof(char *) * (num_matched + 1));
+                            // // matched_files[num_matched] = strdup(files[i]);
+                            // matched_files[i] = malloc(sizeof(char*) * (strlen(matched_files[i] + 1));
+                            // strcpy(matched_files[num_matched], files[i]);
+
+                            num_matched++;
                         }
                     }
 
@@ -334,15 +372,46 @@ struct exec_info* parseCommand() {
                     // }
                 }
             }
+            
             // when it has only back
             else {
                 for(int i = 0; i < *size; i++) {
                     second_pattern = strstr(files[i], pattern[1]);
                     if(second_pattern != NULL) {
-                        printf("%s \n", files[i]);
+                        // printf("%s \n", files[i]);
+                        matched_files = realloc(matched_files, sizeof(char *) * (num_matched + 1));
+                        matched_files[num_matched] = files[i];
+                        num_matched++;
+                        
+                        // matched_files = realloc(matched_files, sizeof(char *) * (num_matched + 1));
+                        // // matched_files[num_matched] = strdup(files[i]);
+                        // strcpy(matched_files[num_matched], files[i]);
+                        // num_matched++;
                     }
                 }
             }
+            
+            matched_files[num_matched] = NULL;
+            int pos = 0; 
+            while (matched_files != NULL) {
+                printf("matched! %s\n", matched_files[pos]);
+                
+
+                // arguments
+                arguments = realloc(arguments, (args_pos + 1) * sizeof(char * ));
+                arguments[args_pos] = (char *) malloc(sizeof(char) * (strlen(matched_files[pos]) + 1));
+            
+                strcpy(arguments[args_pos], matched_files[pos]);
+                
+                ++args_pos;
+                ++pos;
+            }
+
+            printf("test\n");
+
+            
+
+
 
             // for(int i = 0; i < *size; i++) {
             //     first_pattern = strstr(files[i], pattern[0]);
@@ -366,7 +435,6 @@ struct exec_info* parseCommand() {
 
             
 
-        } else {
 
         } else if (strncmp(word, "~/", 2) == 0) {
             // home dir
@@ -405,6 +473,8 @@ struct exec_info* parseCommand() {
     info->input_file = input_file;
     info->output_file = output_file;
     info->args_len = args_pos - 1;
+
+    printf("touched\n");
 
     return info;
 }
