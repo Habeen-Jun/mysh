@@ -132,14 +132,31 @@ char** traverse(char *dname, char** sub_files, size_t* size) {
 }
 
 int check_matched(char *pattern, char *fname) {
-    int start_pos = 0;
+
+
+    int pstart_pos = 0; // pattern start point
+    int fstart_pos; // file starting point
     int end_pos = strlen(pattern) - 1;
-    
     int f_end_pos = strlen(fname) - 1;
-    while (pattern[start_pos] != '*') {
+    int last = strlen(fname) - 1;
+
+    if(pattern[pstart_pos] != '*') {
+        while(last >= 0 && fname[last] != '/') {
+            last--;
+        }
+        if (last < 0) {
+            return 0;
+        }
+    }
+
+    fstart_pos = last + 1;
+
+
+    while (pattern[pstart_pos] != '*') {
         // printf("%c\n", pattern[start_pos]);
-        if (pattern[start_pos] == fname[start_pos]) {
-            start_pos++;
+        if (pattern[pstart_pos] == fname[fstart_pos]) {
+            pstart_pos++;
+            fstart_pos++;
         } else {
             return 0;
         }
@@ -259,7 +276,7 @@ struct exec_info* parseCommand() {
 	while (1) {
         word = words_next();
         // fflush(stdout);
-        printf("token: %s\n", word);
+        // printf("token: %s\n", word);
         // fflush(stdout);
         // EOF in a batch mode
         if (word == NULL) {
@@ -296,106 +313,43 @@ struct exec_info* parseCommand() {
             strcpy(input_file, word);
 
         } else if (strchr(word, '*') != NULL) { // check if the token contains "*"
-            char delim[] = "*"; // The character on the basis of which the split will be done
-            char *token = strtok(word, delim);
-
-            // printf("%s\n", token);
-
-            int i = 0;
-
-            char *pattern[2];
-
-            // printf("%d\n", word[0]);
-
-            // splitting the token and save it
-            // do I need this if/else if statement?
-            if(word[0] == '*') {
-                pattern[0] = NULL;
-                pattern[1] = token;
-            }
-            else {
-                while(token != NULL) {
-                    pattern[i] = token;
-                    // printf("%s \n", pattern[i]);
-                    token = strtok(NULL, delim); // this gives the next remaining string
-                    i++;
-                }
-            }
-
-            // printf("pattern[0] = %s, pattern[1] = %s \n", pattern[0], pattern[1]);
-
             // traversing and storing all the file name
             char **files = malloc(sizeof(char *));
             size_t num = 0;
             size_t *size = &num;
 
+            // char **matched_files = malloc(sizeof(char *));
+            char **matched_files = NULL;
+            size_t matched_num = 0;
+            // size_t *size_matched = &matched_num;
+
             files = traverse(".", files, size); // stores all the subdirectory/file name
-            
-            // divide the cases of the pattern
-            
-            // check all file name that has certain pattern required
-            // use strstr() to compare
-            char *first_pattern;
-            char *second_pattern;
 
-            char **matched_files = malloc(sizeof(char *));
-            size_t num_matched = 0;
-            size_t *size_matched = &num_matched;
-            
+            char **fname_only = malloc(sizeof(char *));
 
-            // checks the first pattern is in the file name (when it only has front)
-            if(pattern[0] != NULL) {
-                for(int i = 0; i < *size; i++) {
-                    first_pattern = strstr(files[i], pattern[0]);
-                    if(first_pattern != NULL) {
-                        // printf("%s \n", files[i]);
-                        second_pattern = strstr(first_pattern, pattern[1]);
-                        // checking the pattern when it has string both front and back
-                        if(second_pattern != NULL) {
-                            // printf("%s \n", files[i]);
-                        
-                            matched_files = realloc(matched_files, sizeof(char *) * (num_matched + 1));
-                            matched_files[num_matched] = files[i];
-                            // replace_files = realloc(replace_files, (i+1));
-                            // return replace_files;
-                            // matched_files = realloc(matched_files, sizeof(char *) * (num_matched + 1));
-                            // // matched_files[num_matched] = strdup(files[i]);
-                            // matched_files[i] = malloc(sizeof(char*) * (strlen(matched_files[i] + 1));
-                            // strcpy(matched_files[num_matched], files[i]);
+            // int contains; // tells if contains the pattern ture/false
 
-                            num_matched++;
-                        }
-                    }
+            for(int i = 0; i< *size; i++) {
+                // printf("%s \n", files[i]);
+                if(check_matched(word, files[i]) == 1) {
+                    // printf("%s \n", files[i]);
 
-                    // else if(first_pattern == NULL) {
-                    //     // printf("No match \n");
-                    // }
+                    fname_only = realloc(fname_only, sizeof(char*) * (matched_num +1));
+                    fname_only[matched_num] = malloc(sizeof(char *) * (strlen(files[i]) -1));
+                    strcpy(fname_only[matched_num], files[i]+2);
+
+                    // printf("%s \n", fname_only[matched_num]);
+
+                    matched_files = realloc(matched_files, (sizeof(char *) * (matched_num + 1)));
+                    matched_files[matched_num] = malloc(sizeof(char *) * (strlen(fname_only[matched_num]) + 1));
+                    strcpy(matched_files[matched_num], fname_only[matched_num]);
+                    matched_num++;
                 }
             }
-            
-            // when it has only back
-            else {
-                for(int i = 0; i < *size; i++) {
-                    second_pattern = strstr(files[i], pattern[1]);
-                    if(second_pattern != NULL) {
-                        // printf("%s \n", files[i]);
-                        matched_files = realloc(matched_files, sizeof(char *) * (num_matched + 1));
-                        matched_files[num_matched] = files[i];
-                        num_matched++;
-                        
-                        // matched_files = realloc(matched_files, sizeof(char *) * (num_matched + 1));
-                        // // matched_files[num_matched] = strdup(files[i]);
-                        // strcpy(matched_files[num_matched], files[i]);
-                        // num_matched++;
-                    }
-                }
-            }
-            
-            matched_files[num_matched] = NULL;
-            int pos = 0; 
-            while (matched_files != NULL) {
-                printf("matched! %s\n", matched_files[pos]);
-                
+
+
+            // storing into arguments
+            for(int pos = 0; pos < matched_num; pos++) {
 
                 // arguments
                 arguments = realloc(arguments, (args_pos + 1) * sizeof(char * ));
@@ -404,38 +358,11 @@ struct exec_info* parseCommand() {
                 strcpy(arguments[args_pos], matched_files[pos]);
                 
                 ++args_pos;
-                ++pos;
             }
 
-            printf("test\n");
-
             
 
-
-
-            // for(int i = 0; i < *size; i++) {
-            //     first_pattern = strstr(files[i], pattern[0]);
-            //     second_pattern = strstr(files[i], pattern[1]);
-
-            //     // checks if it contains both pattern in order (first_pattern comes first)
-            //     if(first_pattern != NULL && second_pattern != NULL && first_pattern < second_pattern) {
-            //         // contains string in the front and back of "*"
-            //         printf("%s\n", files[i]);
-            //     }
-            //     else if(first_pattern == NULL && second_pattern != NULL) {
-                    
-            //         printf("%s\n", files[i]);
-            //     }
-            // }
-
-            // for(int i = 0; i < *size; i++){
-            //     // printf("%s\n", files[i]);
-            //     if(files[i])
-            // }
-
-            
-
-
+        
         } else if (strncmp(word, "~/", 2) == 0) {
             // home dir
             char *home_env = getenv("HOME");
@@ -474,7 +401,7 @@ struct exec_info* parseCommand() {
     info->output_file = output_file;
     info->args_len = args_pos - 1;
 
-    printf("touched\n");
+    // printf("touched\n");
 
     return info;
 }
