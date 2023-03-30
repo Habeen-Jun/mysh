@@ -1,3 +1,0 @@
-echo hello there dsf
-pwd
-cd sfsd
