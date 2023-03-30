@@ -67,7 +67,7 @@ char *get_executable_path(char *word) {
     
 }
 
-char** traverse(char *dname, char** sub_files, size_t* size) {
+char** traverse(char *dname, char** sub_files, size_t* size, int type) {
     struct dirent *de;
     long offset;
     int flen;
@@ -91,39 +91,59 @@ char** traverse(char *dname, char** sub_files, size_t* size) {
     while ((de = readdir(dp))) {
         // printing out all the files/subdirectoreis inside the directory
         // printf("%s/%s\n", dname, de->d_name);
-        if (de->d_type == DT_DIR && de->d_name[0] != '.') {
-            // construct new path
-            flen = strlen(de->d_name);
-            pname = malloc(dlen + flen + 2);
-            memcpy(pname, dname, dlen);
-            pname[dlen] = '/';
-            memcpy(pname + dlen + 1, de->d_name, flen);
-            pname[dlen + 1 + flen] = '\0';
-            // save location in directory
-            offset = telldir(dp);
-            closedir(dp);
-            // recursively traverse subdirectory
-            sub_files = traverse(pname, sub_files, size);
-            free(pname);
-            // restore position in directory
-            dp = opendir(dname); // FIXME: check for success
-            seekdir(dp, offset);
-        }
-        else/* if(de->d_type == DT_REG) */{
-            char *file_name = malloc(sizeof(de->d_name)+sizeof("./"));
-            strcpy(file_name, "./"); // all file starts with "./""
-            strcat(file_name, de->d_name);
-            // printf("%s", slash);
-            int len = strlen(file_name);
-            // printf("%s and %d, i: %d\n", file_name, len, i);
+        // if (de->d_type == DT_DIR && de->d_name[0] != '.') {
+        //     // construct new path
+        //     flen = strlen(de->d_name);
+        //     pname = malloc(dlen + flen + 2);
+        //     memcpy(pname, dname, dlen);
+        //     pname[dlen] = '/';
+        //     memcpy(pname + dlen + 1, de->d_name, flen);
+        //     pname[dlen + 1 + flen] = '\0';
+        //     // save location in directory
+        //     offset = telldir(dp);
+        //     closedir(dp);
+        //     // recursively traverse subdirectory
+        //     sub_files = traverse(pname, sub_files, size);
+        //     free(pname);
+        //     // restore position in directory
+        //     dp = opendir(dname); // FIXME: check for success
+        //     seekdir(dp, offset);
+        // }
+        // else if(de->d_type == DT_REG) {
+        if (type == 1) {
+            if(de->d_type == DT_REG) {
+                char *file_name = malloc(sizeof(de->d_name));
+                // strcpy(file_name, "./"); // all file starts with "./""
+                strcat(file_name, de->d_name);
+                // printf("%s", slash);
+                int len = strlen(file_name);
+                // printf("%s and %d, i: %d\n", file_name, len, i);
 
-            // printf("%ld\n", *size);
-            sub_files[*size] = file_name;
-            *size = *size + 1;
-            sub_files = (char**) realloc(sub_files, sizeof(char *)*(*size + 1)); // resize sub_files array to hold i + 1 pointers
-            
-            i++;
+                // printf("%ld\n", *size);
+                sub_files[*size] = file_name;
+                *size = *size + 1;
+                sub_files = (char**) realloc(sub_files, sizeof(char *)*(*size + 1)); // resize sub_files array to hold i + 1 pointers
+                
+                i++;
+            }
+        } else {
+            if(de->d_type == DT_DIR) {
+                char *dir_name = malloc(sizeof(de->d_name));
+                // strcpy(file_name, "./"); // all file starts with "./""
+                strcat(dir_name, de->d_name);
+                // printf("%s", slash);
+                int len = strlen(dir_name);
+                // printf("%s and %d, i: %d\n", file_name, len, i);
+
+                // printf("%ld\n", *size);
+                sub_files[*size] = dir_name;
+                *size = *size + 1;
+                sub_files = (char**) realloc(sub_files, sizeof(char *)*(*size + 1)); // resize sub_files array to hold i + 1 pointers
+                
+                i++;
+            }
         }
+
     }
     // printf("%p %p\n", readdir(dp), dp);
     // printf("%ld\n", *size);
@@ -135,21 +155,21 @@ int check_matched(char *pattern, char *fname) {
 
 
     int pstart_pos = 0; // pattern start point
-    int fstart_pos; // file starting point
+    int fstart_pos = 0; // file starting point
     int end_pos = strlen(pattern) - 1;
     int f_end_pos = strlen(fname) - 1;
-    int last = strlen(fname) - 1;
+    // int last = strlen(fname) - 1;
 
-    if(pattern[pstart_pos] != '*') {
-        while(last >= 0 && fname[last] != '/') {
-            last--;
-        }
-        if (last < 0) {
-            return 0;
-        }
-    }
+    // if(pattern[pstart_pos] != '*') {
+    //     while(last >= 0 && fname[last] != '/') {
+    //         last--;
+    //     }
+    //     if (last < 0) {
+    //         return 0;
+    //     }
+    // }
 
-    fstart_pos = last + 1;
+    // fstart_pos = last + 1;
 
 
     while (pattern[pstart_pos] != '*') {
@@ -321,11 +341,12 @@ struct exec_info* parseCommand() {
             // char **matched_files = malloc(sizeof(char *));
             char **matched_files = NULL;
             size_t matched_num = 0;
+            int type = 1;
             // size_t *size_matched = &matched_num;
 
-            files = traverse(".", files, size); // stores all the subdirectory/file name
+            files = traverse(".", files, size, type); // stores all the subdirectory/file name
 
-            char **fname_only = malloc(sizeof(char *));
+            // char **fname_only = malloc(sizeof(char *));
 
             // int contains; // tells if contains the pattern ture/false
 
@@ -334,15 +355,15 @@ struct exec_info* parseCommand() {
                 if(check_matched(word, files[i]) == 1) {
                     // printf("%s \n", files[i]);
 
-                    fname_only = realloc(fname_only, sizeof(char*) * (matched_num +1));
-                    fname_only[matched_num] = malloc(sizeof(char *) * (strlen(files[i]) -1));
-                    strcpy(fname_only[matched_num], files[i]+2);
+                    // fname_only = realloc(fname_only, sizeof(char*) * (matched_num +1));
+                    // fname_only[matched_num] = malloc(sizeof(char *) * (strlen(files[i]) -1));
+                    // strcpy(fname_only[matched_num], files[i]+2);
 
                     // printf("%s \n", fname_only[matched_num]);
-
+                    // printf("%s \n", files[i]);
                     matched_files = realloc(matched_files, (sizeof(char *) * (matched_num + 1)));
-                    matched_files[matched_num] = malloc(sizeof(char *) * (strlen(fname_only[matched_num]) + 1));
-                    strcpy(matched_files[matched_num], fname_only[matched_num]);
+                    matched_files[matched_num] = malloc(sizeof(char *) * (strlen(files[i]) + 1));
+                    strcpy(matched_files[matched_num], files[i]);
                     matched_num++;
                 }
             }
@@ -359,6 +380,9 @@ struct exec_info* parseCommand() {
                 
                 ++args_pos;
             }
+        
+        // free(files);
+        // free(matched_files);
 
             
 
